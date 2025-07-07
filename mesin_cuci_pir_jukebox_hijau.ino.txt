@@ -1,0 +1,85 @@
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+
+SoftwareSerial mySerial(10, 11); // TX, RX untuk DFPlayer
+DFRobotDFPlayerMini myDFPlayer;
+
+const int io1Pin = 9;      // Tombol Next (D9)
+const int pirPin = 12;      // Sensor PIR (D12)
+const int maxTrack = 22;
+
+int currentTrack = 0;         // Track yang sedang diputar
+int lastOrderedTrack = 0;     // Untuk urutan saat D6 ditekan
+bool isPlaying = false;
+bool pirTriggered = false;
+
+void setup() {
+  pinMode(io1Pin, INPUT_PULLUP);
+  pinMode(pirPin, INPUT);
+
+  Serial.begin(9600);
+  mySerial.begin(9600);
+delay(1000);
+  if (!myDFPlayer.begin(mySerial)) {
+    Serial.println("DFPlayer Mini tidak terdeteksi!");
+    while (true);
+  }
+
+  myDFPlayer.volume(30);
+  Serial.println("DFPlayer Siap!");
+
+  randomSeed(analogRead(A0)); // Untuk random dari noise analog
+}
+
+void loop() {
+  // === Cek tombol D9 (skip lagu) ===
+  if (digitalRead(io1Pin) == LOW) {
+    // Langsung skip ke lagu berikutnya urut
+    lastOrderedTrack++;
+    if (lastOrderedTrack > maxTrack) lastOrderedTrack = 1;
+
+    currentTrack = lastOrderedTrack;
+    Serial.print("Tombol D9 ditekan. Skip ke lagu: ");
+    Serial.println(currentTrack);
+
+    myDFPlayer.play(currentTrack);
+    isPlaying = true;
+
+    delay(200);
+    while (digitalRead(io1Pin) == LOW); // Tunggu tombol dilepas
+
+    pirTriggered = false; // Reset trigger pir agar bisa trigger lagi
+  }
+
+  // === Cek sensor PIR (putar lagu random langsung) ===
+  if (digitalRead(pirPin) == HIGH) {
+    if (!pirTriggered) { // trigger sekali saat HIGH pertama kali
+      pirTriggered = true;
+
+      int randomTrack;
+      do {
+        randomTrack = random(1, maxTrack + 1);
+      } while (randomTrack == currentTrack);
+
+      currentTrack = randomTrack;
+      lastOrderedTrack = currentTrack;
+
+      Serial.print("Gerakan terdeteksi! Ganti ke lagu acak: ");
+      Serial.println(currentTrack);
+
+      myDFPlayer.play(currentTrack);
+      isPlaying = true;
+    }
+  } else {
+    pirTriggered = false; // reset trigger saat PIR LOW
+  }
+
+  // === Cek apakah lagu selesai ===
+  if (myDFPlayer.available()) {
+    if (myDFPlayer.readType() == DFPlayerPlayFinished) {
+      Serial.println("Lagu selesai.");
+      isPlaying = false;
+      currentTrack = 0; // reset
+    }
+  }
+}
